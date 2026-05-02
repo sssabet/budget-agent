@@ -1,0 +1,22 @@
+# Core
+pandas>=2.2
+pydantic>=2.7
+python-dotenv>=1.0
+rich>=13.7
+
+# Database
+sqlalchemy>=2.0
+psycopg[binary]>=3.2
+alembic>=1.13
+
+# UI
+streamlit>=1.36
+
+# Agent / GCP
+google-genai>=0.3
+google-cloud-aiplatform[agent_engines,adk]>=1.112
+
+# Dev / test
+pytest>=8.2
+pytest-cov>=5.0
+ruff>=0.5

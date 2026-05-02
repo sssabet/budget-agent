@@ -1,0 +1,10 @@
+Product,amount,paid_by,category,belongs_to,description,date
+REMA 1000,540,Saeed,Groceries,,Weekly shop,2026-05-22
+KIWI,612,Partner,Groceries,,,2026-05-23
+Olivia restaurant,890,Partner,Restaurants,,Date night,2026-05-24
+Pharmacy,210,Saeed,Health,Saeed,Medicine,2026-05-26
+Coffee subscription,99,Saeed,Subscriptions,,,2026-05-27
+Bookshop,420,Partner,Shopping,Partner,Books for the kid,2026-05-28
+Mystery vipps,300,Saeed,,,Unknown,2026-05-29
+Old grocery run,2400,Saeed,Groceries,,No exact date,2026-03
+Empty date,150,Partner,Restaurants,,Forgot the date,

@@ -34,6 +34,15 @@ if [[ -n "${CLOUD_SQL_CONNECTION_NAME:-}" ]]; then
   CLOUD_SQL_ARGS=(--add-cloudsql-instances "${CLOUD_SQL_CONNECTION_NAME}")
 fi
 
+OPTIONAL_ENV_ARGS=()
+add_optional_env_var() {
+  local name="$1"
+  local value="${!name:-}"
+  if [[ -n "${value}" ]]; then
+    OPTIONAL_ENV_ARGS+=(--set-env-vars "${name}=${value}")
+  fi
+}
+
 AUTH_ENV_VARS="AUTH_MODE=${AUTH_MODE_VALUE}"
 case "${AUTH_MODE_VALUE}" in
   firebase)
@@ -48,6 +57,30 @@ case "${AUTH_MODE_VALUE}" in
     ;;
 esac
 
+for name in \
+  SEED_USER_EMAIL \
+  SEED_PARTNER_EMAIL \
+  DEFAULT_HOUSEHOLD_NAME \
+  FIREBASE_API_KEY \
+  FIREBASE_AUTH_DOMAIN \
+  FIREBASE_APP_ID \
+  FIREBASE_MESSAGING_SENDER_ID \
+  WEB_PUSH_VAPID_PUBLIC_KEY \
+  WEB_PUSH_VAPID_PRIVATE_KEY \
+  WEB_PUSH_VAPID_SUBJECT \
+  REMINDER_CRON_SECRET \
+  BUDGET_AGENT_SESSION_SECRET \
+  BUDGET_AGENT_SESSION_TTL_SECONDS
+do
+  add_optional_env_var "${name}"
+done
+
+if [[ -z "${BUDGET_AGENT_SESSION_SECRET:-}" ]]; then
+  echo "WARN: BUDGET_AGENT_SESSION_SECRET is not set — the deploy will fall back" >&2
+  echo "      to a hard-coded dev secret. Generate one and add to .env:" >&2
+  echo "        echo \"BUDGET_AGENT_SESSION_SECRET=\$(python -c 'import secrets; print(secrets.token_urlsafe(48))')\" >> .env" >&2
+fi
+
 echo "Deploying ${SERVICE} to ${PROJECT}/${REGION} ..."
 
 # `--source .` uses Cloud Build to build the Dockerfile in this repo and push
@@ -61,6 +94,7 @@ gcloud run deploy "${SERVICE}" \
   --allow-unauthenticated \
   --quiet \
   "${CLOUD_SQL_ARGS[@]}" \
+  "${OPTIONAL_ENV_ARGS[@]}" \
   --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION},BUDGET_AGENT_MODEL=${MODEL}" \
   --set-env-vars "${AUTH_ENV_VARS}" \
   --set-env-vars "DATABASE_URL=${DATABASE_URL_VALUE}" \

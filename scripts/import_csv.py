@@ -21,7 +21,7 @@ def main() -> int:
     p.add_argument("--household", default=None, help="Household name (defaults to env)")
     args = p.parse_args()
 
-    name = args.household or settings().dev_household_name
+    name = args.household or settings().default_household_name
     with session_scope() as s:
         h = get_household_by_name(s, name)
         if h is None:

@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101828" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Budget" />
+    <title>Household Budget</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/static/icon.svg" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script type="module" src="/static/app.js"></script>
+  </head>
+  <body>
+    <main id="app">
+      <section id="auth-view" class="auth-card">
+        <div>
+          <p class="eyebrow">Household Budget</p>
+          <h1>Daily money check-ins for your household.</h1>
+          <p class="muted">
+            Add expenses quickly, see this month clearly, and ask the budget assistant
+            when you need context.
+          </p>
+        </div>
+        <button id="sign-in" class="primary">Sign in with Google</button>
+        <details id="token-details">
+          <summary>Use a bearer token instead</summary>
+          <textarea id="manual-token" placeholder="Paste an ID token"></textarea>
+          <button id="use-token" class="secondary">Use token</button>
+        </details>
+      </section>
+
+      <section id="shell" class="hidden">
+        <header class="topbar">
+          <div>
+            <p id="household-name" class="eyebrow">Household</p>
+            <h1 id="screen-title">Today</h1>
+          </div>
+          <button id="refresh" class="icon-button" aria-label="Refresh">Refresh</button>
+        </header>
+
+        <section id="dashboard-view" class="screen">
+          <label class="month-picker">
+            <span>Month</span>
+            <input id="month" type="month" />
+          </label>
+          <div class="summary-grid">
+            <article class="summary-card">
+              <span>Spent</span>
+              <strong id="spent">0.00 NOK</strong>
+            </article>
+            <article class="summary-card">
+              <span>Income</span>
+              <strong id="income">0.00 NOK</strong>
+            </article>
+            <article class="summary-card wide">
+              <span>Net</span>
+              <strong id="net">0.00 NOK</strong>
+            </article>
+          </div>
+          <div id="attention" class="attention hidden"></div>
+          <section class="panel">
+            <h2>Spending by category</h2>
+            <div id="category-list" class="stack"></div>
+          </section>
+          <section class="panel">
+            <header class="panel-header">
+              <h2>Recent transactions</h2>
+              <button id="show-all-tx" class="link-button" type="button">See all</button>
+            </header>
+            <div id="recent-list" class="stack"></div>
+          </section>
+        </section>
+
+        <section id="transactions-view" class="screen hidden">
+          <header class="back-header">
+            <button id="tx-back" class="link-button" type="button">← Back</button>
+            <h2>All transactions</h2>
+          </header>
+          <label class="month-picker">
+            <span>Month</span>
+            <input id="tx-month" type="month" />
+            <label class="checkbox-row inline">
+              <input id="tx-all-months" type="checkbox" />
+              <span>All months</span>
+            </label>
+          </label>
+          <label class="month-picker">
+            <span>Category</span>
+            <select id="tx-category"></select>
+          </label>
+          <section class="panel">
+            <p id="tx-status" class="muted"></p>
+            <div id="tx-list" class="stack"></div>
+            <button id="tx-load-more" class="secondary full hidden" type="button">Load more</button>
+          </section>
+        </section>
+
+        <section id="add-view" class="screen hidden">
+          <div class="add-mode-switch" role="tablist" aria-label="Entry mode">
+            <button data-mode="single" class="active" type="button" role="tab">Single</button>
+            <button data-mode="bulk" type="button" role="tab">Bulk</button>
+          </div>
+
+          <form id="expense-form" class="panel form">
+            <h2>Add transaction</h2>
+            <label>
+              <span>What was it?</span>
+              <input id="product" required maxlength="255" autocomplete="off" placeholder="Rema, parking, coffee..." />
+            </label>
+            <label>
+              <span>Amount (NOK)</span>
+              <input id="amount" required type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" />
+            </label>
+            <div class="two-col">
+              <label>
+                <span>Date</span>
+                <input id="date" required type="date" />
+              </label>
+              <label>
+                <span>Category</span>
+                <select id="category"></select>
+              </label>
+            </div>
+            <div class="two-col">
+              <label>
+                <span>Paid by</span>
+                <select id="paid-by"></select>
+              </label>
+              <label>
+                <span>Belongs to</span>
+                <select id="belongs-to"></select>
+              </label>
+            </div>
+            <label>
+              <span>Note</span>
+              <input id="description" maxlength="500" autocomplete="off" placeholder="Optional" />
+            </label>
+            <button class="primary" type="submit">Save transaction</button>
+          </form>
+
+          <section id="bulk-add" class="panel hidden">
+            <header class="bulk-header">
+              <h2>Bulk add</h2>
+              <p class="muted">
+                Type, Tab, repeat. Date, category, paid-by and belongs-to carry over to the next row.
+                A new empty row appears as soon as you start typing in the last one.
+              </p>
+            </header>
+            <div class="bulk-table-wrap">
+              <table class="bulk-table">
+                <thead>
+                  <tr>
+                    <th class="col-product">What</th>
+                    <th class="col-amount">Amount</th>
+                    <th class="col-date">Date</th>
+                    <th class="col-category">Category</th>
+                    <th class="col-paid">Paid by</th>
+                    <th class="col-belongs">Belongs to</th>
+                    <th class="col-note">Note</th>
+                    <th class="col-remove" aria-label="Remove"></th>
+                  </tr>
+                </thead>
+                <tbody id="bulk-rows"></tbody>
+              </table>
+            </div>
+            <div class="bulk-actions">
+              <button id="bulk-add-row" class="secondary" type="button">+ Add row</button>
+              <button id="bulk-save" class="primary" type="button">Save all</button>
+            </div>
+            <p id="bulk-status" class="muted"></p>
+          </section>
+        </section>
+
+        <section id="plan-view" class="screen hidden">
+          <label class="month-picker">
+            <span>Budget for</span>
+            <input id="plan-month" type="month" />
+          </label>
+
+          <section class="panel">
+            <h2>Monthly budget</h2>
+            <p class="muted">Set how much you plan to spend per category. Income categories are listed but not budgeted.</p>
+            <div id="plan-list" class="stack budget-list"></div>
+            <button id="plan-save" class="primary full" type="button" disabled>Save changes</button>
+            <p id="plan-status" class="muted"></p>
+          </section>
+
+          <section class="panel form">
+            <h2>Add a category</h2>
+            <label>
+              <span>Name</span>
+              <input id="new-cat-name" maxlength="80" autocomplete="off" placeholder="e.g. Charity" />
+            </label>
+            <label class="checkbox-row">
+              <input id="new-cat-income" type="checkbox" />
+              <span>This is an income category</span>
+            </label>
+            <label>
+              <span>Initial monthly budget (NOK)</span>
+              <input id="new-cat-budget" type="number" min="0" step="100" inputmode="decimal" placeholder="0" />
+            </label>
+            <button id="add-cat" class="primary" type="button">Add category</button>
+          </section>
+
+          <section class="panel form">
+            <h2>Import CSV</h2>
+            <p class="muted">
+              Columns: Product, amount, paid_by, category, belongs_to, description, date.
+              Date can be YYYY-MM-DD, YYYY-MM, or empty. Unknown categories are auto-created;
+              you can rename or merge them later.
+            </p>
+            <label>
+              <span>CSV file</span>
+              <input id="csv-file" type="file" accept=".csv,text/csv" />
+            </label>
+            <label class="checkbox-row">
+              <input id="csv-wipe" type="checkbox" />
+              <span>Delete existing transactions before importing</span>
+            </label>
+            <button id="csv-import" class="primary" type="button">Import</button>
+            <p id="csv-status" class="muted"></p>
+          </section>
+        </section>
+
+        <section id="chat-view" class="screen hidden">
+          <section class="panel chat-panel">
+            <header class="chat-intro">
+              <p class="eyebrow">Budget Coach</p>
+              <h2>Ask the assistant</h2>
+              <p class="muted">Pick a starter question or type what is on your mind.</p>
+            </header>
+            <div class="prompt-chips" aria-label="Suggested questions">
+              <button type="button" data-prompt="How are we doing this month?">How are we doing this month?</button>
+              <button type="button" data-prompt="What should we watch before payday?">What should we watch before payday?</button>
+              <button type="button" data-prompt="Which category needs attention?">Which category needs attention?</button>
+              <button type="button" data-prompt="Show our top merchants this month.">Show top merchants</button>
+              <button type="button" data-prompt="Help me prepare a weekly money chat.">Plan a money chat</button>
+            </div>
+            <div id="chat-log" class="chat-log"></div>
+            <form id="chat-form" class="chat-form">
+              <input id="chat-prompt" required placeholder="How are we doing this month?" />
+              <button class="primary" type="submit">Send</button>
+            </form>
+          </section>
+        </section>
+
+        <section id="edit-tx-view" class="screen hidden">
+          <header class="back-header">
+            <button id="edit-tx-back" class="link-button" type="button">← Back</button>
+            <h2>Edit transaction</h2>
+          </header>
+          <form id="edit-tx-form" class="panel form">
+            <label>
+              <span>What was it?</span>
+              <input id="edit-tx-product" required maxlength="255" autocomplete="off" />
+            </label>
+            <label>
+              <span>Amount (NOK)</span>
+              <input id="edit-tx-amount" required type="number" min="0.01" step="0.01" inputmode="decimal" />
+            </label>
+            <div class="two-col">
+              <label>
+                <span>Date</span>
+                <input id="edit-tx-date" type="date" />
+              </label>
+              <label>
+                <span>Category</span>
+                <select id="edit-tx-category"></select>
+              </label>
+            </div>
+            <label class="checkbox-row">
+              <input id="edit-tx-estimated" type="checkbox" />
+              <span>Date is approximate (only month known)</span>
+            </label>
+            <div class="two-col">
+              <label>
+                <span>Paid by</span>
+                <select id="edit-tx-paid-by"></select>
+              </label>
+              <label>
+                <span>Belongs to</span>
+                <select id="edit-tx-belongs-to"></select>
+              </label>
+            </div>
+            <label>
+              <span>Note</span>
+              <input id="edit-tx-description" maxlength="500" autocomplete="off" />
+            </label>
+            <button class="primary" type="submit">Save</button>
+            <button id="edit-tx-delete" class="danger full" type="button">Delete transaction</button>
+          </form>
+        </section>
+
+        <section id="edit-cat-view" class="screen hidden">
+          <header class="back-header">
+            <button id="edit-cat-back" class="link-button" type="button">← Back</button>
+            <h2>Edit category</h2>
+          </header>
+          <form id="edit-cat-form" class="panel form">
+            <label>
+              <span>Name</span>
+              <input id="edit-cat-name" required maxlength="80" autocomplete="off" />
+            </label>
+            <label class="checkbox-row">
+              <input id="edit-cat-income" type="checkbox" />
+              <span>This is an income category</span>
+            </label>
+            <button class="primary" type="submit">Save</button>
+            <button id="edit-cat-delete" class="danger full" type="button">Delete category</button>
+            <p id="edit-cat-status" class="muted"></p>
+          </form>
+        </section>
+
+        <section id="settings-view" class="screen hidden">
+          <section class="panel form">
+            <h2>Household</h2>
+            <label>
+              <span>Household name</span>
+              <input id="household-name-input" maxlength="120" autocomplete="off" />
+            </label>
+            <button id="save-household-name" class="primary" type="button">Save name</button>
+
+            <h3 class="subhead">Members</h3>
+            <div id="member-list" class="stack"></div>
+
+            <label>
+              <span>Add partner by email</span>
+              <input id="new-member-email" type="email" inputmode="email" maxlength="255" autocomplete="off" placeholder="partner@gmail.com" />
+            </label>
+            <label>
+              <span>Display name (optional)</span>
+              <input id="new-member-name" maxlength="120" autocomplete="off" placeholder="Partner" />
+            </label>
+            <button id="add-member" class="primary" type="button">Add member</button>
+            <p id="member-status" class="muted"></p>
+          </section>
+
+          <section class="panel form">
+            <h2>Daily reminder</h2>
+            <p class="muted">
+              iPhone notifications work after you add this PWA to your Home Screen and allow notifications.
+            </p>
+            <label>
+              <span>Reminder time</span>
+              <input id="reminder-time" type="time" value="20:00" />
+            </label>
+            <button id="enable-reminders" class="primary" type="button">Enable daily reminder</button>
+            <p id="notification-status" class="muted"></p>
+          </section>
+          <button id="sign-out" class="secondary full" type="button">Sign out</button>
+          <p class="muted" style="text-align:center; font-size:0.78rem; margin-top:8px;">
+            Build 2026-05-04T00:30Z
+          </p>
+        </section>
+
+        <nav class="tabbar" aria-label="Main navigation">
+          <button data-tab="dashboard" class="active">Today</button>
+          <button data-tab="add">Add</button>
+          <button data-tab="plan">Plan</button>
+          <button data-tab="chat">Ask</button>
+          <button data-tab="settings">Settings</button>
+        </nav>
+      </section>
+
+      <div id="toast" class="toast hidden"></div>
+    </main>
+  </body>
+</html>

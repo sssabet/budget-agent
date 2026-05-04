@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 
-from google.genai import types as genai_types
-
 from app.agent.agent import build_agent
+from app.agent.turn_log import run_turn_with_logging
 from app.config import settings
 from app.db.repository import get_household_by_name
 from app.db.session import session_scope
@@ -23,42 +23,51 @@ from app.db.session import session_scope
 APP_NAME = "budget-agent"
 
 
-async def _run_one(runner, user_id: str, session_id: str, prompt: str) -> str:
-    msg = genai_types.Content(role="user", parts=[genai_types.Part(text=prompt)])
-    final_text_parts: list[str] = []
-    async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=msg):
-        # Surface tool calls so the human can see what happened
-        if event.content and event.content.parts:
-            for part in event.content.parts:
-                if part.function_call:
-                    print(f"  [tool] {part.function_call.name}({dict(part.function_call.args)})", file=sys.stderr)
-                if part.function_response:
-                    print(f"  [tool result] {part.function_response.name} -> ok", file=sys.stderr)
-        if event.is_final_response() and event.content and event.content.parts:
-            for part in event.content.parts:
-                if part.text:
-                    final_text_parts.append(part.text)
-    return "".join(final_text_parts).strip()
+def _setup_logging() -> None:
+    # One JSON line per turn on stderr. Quiet enough that interactive output
+    # stays readable, structured enough that it can be tail'd into a file.
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    log = logging.getLogger("budget_agent.turn")
+    log.handlers = [handler]
+    log.setLevel(logging.INFO)
+    log.propagate = False
+
+
+async def _run_one(runner, user_id: str, session_id: str, prompt: str, model: str) -> str:
+    record = await run_turn_with_logging(
+        runner=runner,
+        user_id=user_id,
+        session_id=session_id,
+        prompt=prompt,
+        model=model,
+    )
+    # Surface tool calls visibly to the human as a brief summary.
+    for call in record.tools:
+        latency = f"{call['latency_ms']}ms" if call.get("latency_ms") is not None else "?"
+        print(f"  [tool] {call['name']}({call['args']}) -> {latency}", file=sys.stderr)
+    return record.final_answer
 
 
 async def _amain(once: str | None) -> int:
     from google.adk.runners import InMemoryRunner
 
+    _setup_logging()
     cfg = settings()
     with session_scope() as s:
-        h = get_household_by_name(s, cfg.dev_household_name)
+        h = get_household_by_name(s, cfg.default_household_name)
         if h is None:
-            print(f"household '{cfg.dev_household_name}' not found", file=sys.stderr)
+            print(f"household '{cfg.default_household_name}' not found", file=sys.stderr)
             return 1
         agent = build_agent(h.id, h.name)
         household_label = h.name
 
     runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
-    user_id = "saeed-local"
+    user_id = "cli"
     session = await runner.session_service.create_session(app_name=APP_NAME, user_id=user_id)
 
     if once is not None:
-        text = await _run_one(runner, user_id, session.id, once)
+        text = await _run_one(runner, user_id, session.id, once, cfg.model)
         print(text)
         return 0
 
@@ -73,7 +82,7 @@ async def _amain(once: str | None) -> int:
             continue
         if prompt.lower() in {"exit", "quit"}:
             return 0
-        text = await _run_one(runner, user_id, session.id, prompt)
+        text = await _run_one(runner, user_id, session.id, prompt, cfg.model)
         print(f"agent> {text}\n")
 
 

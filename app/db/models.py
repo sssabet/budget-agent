@@ -9,7 +9,7 @@ Convention:
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -20,6 +20,8 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     String,
+    Text,
+    Time,
     UniqueConstraint,
     func,
 )
@@ -147,3 +149,34 @@ class Budget(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
     category: Mapped[Category] = relationship()
+
+
+class NotificationSubscription(Base):
+    __tablename__ = "notification_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("endpoint", name="uq_notification_subscriptions_endpoint"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh: Mapped[str] = mapped_column(Text, nullable=False)
+    auth: Mapped[str] = mapped_column(Text, nullable=False)
+    timezone: Mapped[str] = mapped_column(String(80), nullable=False, default="UTC")
+    reminder_time: Mapped[time] = mapped_column(Time, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_reminded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    user: Mapped[User] = relationship()
+    household: Mapped[Household] = relationship()

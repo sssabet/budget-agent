@@ -58,17 +58,17 @@ def seed() -> None:
     cfg = settings()
     with session_scope() as s:
         # idempotent: skip if our seed household already exists
-        existing = s.scalar(select(Household).where(Household.name == cfg.dev_household_name))
+        existing = s.scalar(select(Household).where(Household.name == cfg.default_household_name))
         if existing is not None:
             print(f"Household '{existing.name}' already seeded; skipping.")
             return
 
-        household = Household(name=cfg.dev_household_name)
+        household = Household(name=cfg.default_household_name)
         s.add(household)
         s.flush()
 
-        saeed = User(email=cfg.dev_user_email, display_name="Saeed")
-        maryam = User(email="maryam@example.com", display_name="Maryam")
+        saeed = User(email=cfg.seed_user_email, display_name="Saeed")
+        maryam = User(email=cfg.seed_partner_email, display_name="Maryam")
         s.add_all([saeed, maryam])
         s.flush()
 

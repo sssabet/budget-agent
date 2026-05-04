@@ -1,12 +1,8 @@
 """Agent factory.
 
 Builds an ADK Agent bound to a specific household. The agent's tools close over
-the household_id so the LLM never sees or has to pass it.
-
-Two run modes are supported via env:
-  - GOOGLE_GENAI_USE_VERTEXAI=true (default) -> Vertex AI on the user's GCP project.
-    Requires `gcloud auth application-default login` and GOOGLE_CLOUD_PROJECT set.
-  - GOOGLE_GENAI_USE_VERTEXAI=false                 -> AI Studio (needs GOOGLE_API_KEY).
+the household_id so the LLM never sees or has to pass it. Production uses Vertex
+AI through the Cloud Run service account.
 """
 from __future__ import annotations
 
@@ -26,22 +22,34 @@ def load_system_instruction() -> str:
     return PROMPT_PATH.read_text()
 
 
-def build_agent(household_id: uuid.UUID, household_name: str) -> Agent:
+def build_agent(
+    household_id: uuid.UUID,
+    household_name: str,
+    *,
+    default_month: date | None = None,
+) -> Agent:
     """Build a Budget Coach agent bound to one household.
 
     The current date is injected into the instruction at construction time. Without
     this the model defaults to its training cutoff when interpreting "this month"
     or bare month names — e.g. "May" -> 2024-05 -> empty results.
+
+    If `default_month` is provided (typically the month the user has selected in the
+    UI), the agent treats that as the active month when the user doesn't specify one.
+    The user can still steer to a different month in conversation.
     """
     cfg = settings()
     today = date.today()
+    active_month = (default_month or today).strftime("%Y-%m")
     instruction = load_system_instruction()
     instruction += (
         f"\n\n# Context\n"
         f"Household name: **{household_name}**. Currency: NOK.\n"
         f"Today's date: **{today.isoformat()}**. "
-        f"When the user says 'this month' or a bare month name, resolve relative to today. "
-        f"Default to {today.strftime('%Y-%m')} unless they specify a different year.\n"
+        f"Active month: **{active_month}** — use this when the user says "
+        f"'this month' or asks a question without naming a month. "
+        f"If they name a different month in conversation, switch to it for the rest "
+        f"of the chat unless they switch again.\n"
     )
     return Agent(
         name="budget_coach",

@@ -9,12 +9,18 @@ sqlalchemy>=2.0
 psycopg[binary]>=3.2
 alembic>=1.13
 
-# UI
-streamlit>=1.36
+# API (Cloud Run)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pyjwt>=2.9
+google-auth>=2.35
+pywebpush>=2.0
 
 # Agent / GCP
 google-genai>=0.3
 google-cloud-aiplatform[agent_engines,adk]>=1.112
+google-cloud-bigquery>=3.25
 
 # Dev / test
 pytest>=8.2

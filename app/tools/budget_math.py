@@ -54,8 +54,6 @@ def spend_by_category(
             continue
         if t.category is not None and t.category.is_income:
             continue
-        if _is_excluded_cost_category(t):
-            continue
         name = t.category.name if t.category else "(uncategorized)"
         totals[name] += t.amount
     return dict(totals)

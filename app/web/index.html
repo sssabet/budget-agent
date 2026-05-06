@@ -14,16 +14,54 @@
   </head>
   <body>
     <main id="app">
-      <section id="auth-view" class="auth-card">
+      <section id="landing-view" class="auth-card landing">
+        <div class="landing-hero">
+          <p class="eyebrow">Household Budget</p>
+          <h1>Your household budget, in plain English.</h1>
+          <p class="muted">
+            Track every expense in one tap, see your month clearly, and ask the
+            agent for a second opinion whenever you need it.
+          </p>
+        </div>
+        <ul class="landing-features" aria-label="Features">
+          <li>
+            <span class="feature-icon" aria-hidden="true">+</span>
+            <div>
+              <strong>Quick add</strong>
+              <p class="muted">Log an expense in seconds, from phone or laptop.</p>
+            </div>
+          </li>
+          <li>
+            <span class="feature-icon" aria-hidden="true">=</span>
+            <div>
+              <strong>Clear month</strong>
+              <p class="muted">See what's left, what's overspent, and where it went.</p>
+            </div>
+          </li>
+          <li>
+            <span class="feature-icon" aria-hidden="true">?</span>
+            <div>
+              <strong>Ask anything</strong>
+              <p class="muted">Chat with an agent that already knows your numbers.</p>
+            </div>
+          </li>
+        </ul>
+        <div class="landing-cta">
+          <button id="landing-signup" class="primary" type="button">Sign up &amp; get started</button>
+          <button id="landing-signin" class="secondary" type="button">I already have an account</button>
+        </div>
+      </section>
+
+      <section id="auth-view" class="auth-card hidden">
         <div>
           <p class="eyebrow">Household Budget</p>
-          <h1>Daily money check-ins for your household.</h1>
+          <h1>Sign in to continue.</h1>
           <p class="muted">
-            Add expenses quickly, see this month clearly, and ask the budget assistant
-            when you need context.
+            We use Google sign-in so you don't have to remember another password.
           </p>
         </div>
         <button id="sign-in" class="primary">Sign in with Google</button>
+        <button id="back-to-landing" class="secondary" type="button">Back</button>
         <details id="token-details">
           <summary>Use a bearer token instead</summary>
           <textarea id="manual-token" placeholder="Paste an ID token"></textarea>
@@ -46,17 +84,27 @@
             <input id="month" type="month" />
           </label>
           <div class="summary-grid">
-            <article class="summary-card">
-              <span>Spent</span>
-              <strong id="spent">0.00 NOK</strong>
+            <article class="summary-card savings-card wide" id="savings-card">
+              <span id="savings-label">Saved this month</span>
+              <strong id="net">0.00 NOK</strong>
+              <small id="savings-sub" class="muted"></small>
             </article>
             <article class="summary-card">
               <span>Income</span>
               <strong id="income">0.00 NOK</strong>
             </article>
-            <article class="summary-card wide">
-              <span>Net</span>
-              <strong id="net">0.00 NOK</strong>
+            <article class="summary-card">
+              <span>Spent</span>
+              <strong id="spent">0.00 NOK</strong>
+            </article>
+            <article class="summary-card wide" id="budget-progress-card">
+              <div class="budget-progress-head">
+                <span>Spent vs budget</span>
+                <small id="budget-progress-text" class="muted">No budgets set yet.</small>
+              </div>
+              <div class="progress" aria-label="Spent vs total budget">
+                <div id="budget-progress-bar" class="progress-bar" style="width:0%"></div>
+              </div>
             </article>
           </div>
           <div id="attention" class="attention hidden"></div>

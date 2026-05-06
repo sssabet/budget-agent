@@ -75,8 +75,19 @@ function money(value) {
 }
 
 function setSignedIn(isSignedIn) {
-  $("auth-view").classList.toggle("hidden", isSignedIn);
+  $("landing-view").classList.toggle("hidden", isSignedIn);
+  $("auth-view").classList.add("hidden");
   $("shell").classList.toggle("hidden", !isSignedIn);
+}
+
+function showAuthView() {
+  $("landing-view").classList.add("hidden");
+  $("auth-view").classList.remove("hidden");
+}
+
+function showLandingView() {
+  $("auth-view").classList.add("hidden");
+  $("landing-view").classList.remove("hidden");
 }
 
 function transactionRow(t) {
@@ -128,7 +139,9 @@ function escapeHtml(value) {
 function renderDashboard(data) {
   $("spent").textContent = money(data.total_expense_NOK);
   $("income").textContent = money(data.total_income_NOK);
-  $("net").textContent = money(data.net_NOK);
+
+  renderSavingsCard(data);
+  renderBudgetProgressCard(data);
 
   const attention = [];
   if (data.uncategorized_count) attention.push(`${data.uncategorized_count} uncategorized`);
@@ -137,18 +150,98 @@ function renderDashboard(data) {
   $("attention").textContent = attention.length ? `Needs review: ${attention.join(", ")}` : "";
   $("attention").classList.toggle("hidden", !attention.length);
 
-  const categories = Object.entries(data.by_category_NOK)
-    .sort((a, b) => Number(b[1]) - Number(a[1]))
-    .map(([name, amount]) => `
-      <div class="row">
-        <div><strong>${escapeHtml(name)}</strong></div>
-        <div class="amount">${money(amount)}</div>
-      </div>
-    `)
-    .join("");
-  $("category-list").innerHTML = categories || `<p class="muted">No spending yet for this month.</p>`;
+  $("category-list").innerHTML = renderCategoryProgress(data);
   $("recent-list").innerHTML = data.recent_transactions.map(transactionRow).join("")
     || `<p class="muted">No transactions yet. Add the first one.</p>`;
+}
+
+function renderSavingsCard(data) {
+  const card = $("savings-card");
+  const net = Number(data.net_NOK);
+  const income = Number(data.total_income_NOK);
+  card.classList.remove("positive", "negative", "neutral");
+
+  $("net").textContent = money(data.net_NOK);
+
+  if (income <= 0 && Number(data.total_expense_NOK) <= 0) {
+    $("savings-label").textContent = "This month";
+    $("savings-sub").textContent = "Add income and expenses to see your savings.";
+    card.classList.add("neutral");
+    return;
+  }
+
+  if (net > 0) {
+    const ratio = income > 0 ? (net / income) * 100 : 0;
+    $("savings-label").textContent = "Saved this month";
+    $("savings-sub").textContent = income > 0
+      ? `That's ${ratio.toFixed(0)}% of income kept. Nice work!`
+      : "Keep it up!";
+    card.classList.add("positive");
+  } else if (net < 0) {
+    $("savings-label").textContent = "Over budget this month";
+    $("savings-sub").textContent = "Spending is ahead of income — see what to dial back.";
+    card.classList.add("negative");
+  } else {
+    $("savings-label").textContent = "Breaking even";
+    $("savings-sub").textContent = "Income matches spending exactly.";
+    card.classList.add("neutral");
+  }
+}
+
+function renderBudgetProgressCard(data) {
+  const totalBudget = Number(data.total_budget_NOK);
+  const spent = Number(data.total_expense_NOK);
+  const bar = $("budget-progress-bar");
+  const text = $("budget-progress-text");
+  const card = $("budget-progress-card");
+  card.classList.remove("under", "near", "over");
+
+  if (totalBudget <= 0) {
+    bar.style.width = "0%";
+    text.textContent = "Set category budgets in Plan to see progress.";
+    card.classList.add("under");
+    return;
+  }
+
+  const pct = (spent / totalBudget) * 100;
+  bar.style.width = `${Math.min(100, pct).toFixed(1)}%`;
+  const status = pct >= 100 ? "over" : pct >= 85 ? "near" : "under";
+  card.classList.add(status);
+  const remaining = totalBudget - spent;
+  text.textContent = remaining >= 0
+    ? `${money(spent.toFixed(2))} of ${money(totalBudget.toFixed(2))} · ${money(remaining.toFixed(2))} left`
+    : `${money(spent.toFixed(2))} of ${money(totalBudget.toFixed(2))} · ${money((-remaining).toFixed(2))} over`;
+}
+
+function renderCategoryProgress(data) {
+  const reports = data.category_progress || [];
+  if (!reports.length) {
+    return `<p class="muted">No spending yet for this month.</p>`;
+  }
+  return reports.map((r) => {
+    const budgeted = Number(r.budgeted_NOK);
+    const actual = Number(r.actual_NOK);
+    const hasBudget = budgeted > 0;
+    const pct = hasBudget ? Math.min(100, (actual / budgeted) * 100) : 0;
+    const status = hasBudget ? r.status : "unbudgeted";
+    const meta = hasBudget
+      ? (status === "over"
+          ? `<small class="cat-meta over">Over by ${money((actual - budgeted).toFixed(2))}</small>`
+          : `<small class="cat-meta">${money((budgeted - actual).toFixed(2))} left of ${money(r.budgeted_NOK)}</small>`)
+      : `<small class="cat-meta muted">No budget set</small>`;
+    return `
+      <div class="cat-row cat-${status}">
+        <div class="cat-head">
+          <strong>${escapeHtml(r.category)}</strong>
+          <span class="amount">${money(r.actual_NOK)}</span>
+        </div>
+        <div class="progress slim" aria-hidden="${hasBudget ? "false" : "true"}">
+          <div class="progress-bar" style="width:${pct.toFixed(1)}%"></div>
+        </div>
+        ${meta}
+      </div>
+    `;
+  }).join("");
 }
 
 async function loadAppData() {
@@ -1127,6 +1220,9 @@ function bindUi() {
   document.querySelectorAll(".tabbar button").forEach((button) => {
     button.addEventListener("click", () => switchTab(button.dataset.tab));
   });
+  $("landing-signup").addEventListener("click", showAuthView);
+  $("landing-signin").addEventListener("click", showAuthView);
+  $("back-to-landing").addEventListener("click", showLandingView);
   if (location.hash === "#add") switchTab("add");
 }
 

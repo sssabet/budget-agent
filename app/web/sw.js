@@ -1,4 +1,4 @@
-const CACHE_NAME = "budget-pwa-v5";
+const CACHE_NAME = "budget-pwa-v6";
 const SHELL_ASSETS = [
   "/",
   "/static/styles.css",

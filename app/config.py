@@ -25,7 +25,6 @@ class Settings:
     web_push_vapid_public_key: str
     web_push_vapid_private_key: str
     web_push_vapid_subject: str
-    reminder_cron_secret: str
     session_secret: str
     session_ttl_seconds: int
 
@@ -50,7 +49,6 @@ def settings() -> Settings:
         web_push_vapid_public_key=os.getenv("WEB_PUSH_VAPID_PUBLIC_KEY", ""),
         web_push_vapid_private_key=os.getenv("WEB_PUSH_VAPID_PRIVATE_KEY", ""),
         web_push_vapid_subject=os.getenv("WEB_PUSH_VAPID_SUBJECT", "mailto:you@example.com"),
-        reminder_cron_secret=os.getenv("REMINDER_CRON_SECRET", ""),
         # Used to sign the session cookie. MUST be set in production. The
         # dev fallback is intentionally weak and will print a warning on use
         # so it doesn't quietly survive into a real deploy.

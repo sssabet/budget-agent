@@ -9,15 +9,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from datetime import date
-from decimal import Decimal
 
 from sqlalchemy import select
 
 from app.config import settings
 from app.db.models import (
     Base,
-    Budget,
     Category,
     Household,
     HouseholdUser,
@@ -26,24 +23,30 @@ from app.db.models import (
 from app.db.session import engine, session_scope
 
 DEFAULT_CATEGORIES = [
+    # Income
     ("Salary", True),
-    ("Investment", False),
-    ("Car", False),
-    ("Eating_out", False),
-    ("Health & Wellness", False),
-    ("Grocery", False),
-    ("Subscriptions / Entertaiment", False),
-    ("Education", False),
+    ("Other Income", True),
+    # Housing
+    ("Rent / Mortgage", False),
     ("Utilities", False),
-    ("Liam - Leisure", False),
+    ("Home & Appliances", False),
+    # Food
+    ("Groceries", False),
+    ("Eating Out", False),
+    # Mobility
     ("Transport", False),
-    ("admin", False),
-    ("Liam - Essential", False),
-    ("Mortgage", False),
+    ("Car", False),
+    # Lifestyle
+    ("Health & Wellness", False),
+    ("Subscriptions & Entertainment", False),
+    ("Personal Care", False),
     ("Clothing", False),
-    ("Home appliance", False),
-    ("Gift", False),
+    ("Education", False),
     ("Travel", False),
+    ("Gifts", False),
+    # Money flow
+    ("Investment", False),
+    ("Miscellaneous", False),
 ]
 
 
@@ -77,39 +80,11 @@ def seed() -> None:
             HouseholdUser(household_id=household.id, user_id=maryam.id, role="member"),
         ])
 
-        cats: dict[str, Category] = {}
         for name, is_income in DEFAULT_CATEGORIES:
-            c = Category(household_id=household.id, name=name, is_income=is_income)
-            s.add(c)
-            cats[name] = c
+            s.add(Category(household_id=household.id, name=name, is_income=is_income))
         s.flush()
 
-        may = date(2026, 5, 1)
-
-        # May budget — zero-based envelopes
-        budget_amounts = {
-            "Utilities": "7700",
-            "Car": "0",
-            "Clothing": "800",
-            "Eating_out": "3000",
-            "Education": "3000",
-            "Gift": "300",
-            "Grocery": "8000",
-            "Liam - Leisure": "800",
-            "Transport": "1900",
-            "Subscriptions / Entertaiment": "500",
-            "Travel": "1000",
-            "Mortgage": "35000",
-        }
-        for name, amount in budget_amounts.items():
-            s.add(Budget(
-                household_id=household.id,
-                month=may,
-                category_id=cats[name].id,
-                amount=Decimal(amount),
-            ))
-
-        print(f"Seeded household '{household.name}' with 0 transactions and {len(budget_amounts)} budget lines.")
+        print(f"Seeded household '{household.name}' with {len(DEFAULT_CATEGORIES)} default categories.")
 
 
 def main() -> None:

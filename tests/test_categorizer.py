@@ -15,7 +15,7 @@ from app.tools.categorizer import (
 from app.tools.types import Category, Transaction
 
 
-GROCERY = Category(id="c1", name="Grocery", is_income=False)
+GROCERY = Category(id="c1", name="Groceries", is_income=False)
 TRANSPORT = Category(id="c2", name="Transport", is_income=False)
 
 
@@ -45,10 +45,10 @@ class TestProposeForTransaction:
     def test_matches_substring_in_product(self):
         # The household's category name uses different casing — resolution
         # should be case-insensitive but preserve the household's spelling.
-        avail = {"grocery": "Grocery"}
+        avail = {"groceries": "Groceries"}
         s = propose_for_transaction(t("REMA 1000 Storo"), avail)
         assert s is not None
-        assert s.suggested_category == "Grocery"
+        assert s.suggested_category == "Groceries"
         assert "rema" in s.reason
 
     def test_falls_back_to_description(self):
@@ -58,28 +58,28 @@ class TestProposeForTransaction:
         assert s.suggested_category == "Transport"
 
     def test_returns_none_when_no_rule_matches(self):
-        avail = {"grocery": "Grocery"}
+        avail = {"groceries": "Groceries"}
         assert propose_for_transaction(t("Some unknown shop"), avail) is None
 
     def test_already_categorized_returns_none(self):
-        avail = {"grocery": "Grocery"}
+        avail = {"groceries": "Groceries"}
         assert propose_for_transaction(t("REMA", cat=GROCERY), avail) is None
 
     def test_skips_rule_when_household_lacks_category(self):
-        # Rule fires on "netflix" -> Subscriptions / Entertaiment, but if the
+        # Rule fires on "netflix" -> Subscriptions & Entertainment, but if the
         # household doesn't have that category the suggestion should be skipped
         # rather than inventing a name.
-        avail = {"grocery": "Grocery"}
+        avail = {"groceries": "Groceries"}
         assert propose_for_transaction(t("Netflix"), avail) is None
 
     def test_empty_text_returns_none(self):
-        avail = {"grocery": "Grocery"}
+        avail = {"groceries": "Groceries"}
         assert propose_for_transaction(t(""), avail) is None
 
 
 class TestProposeCategories:
     def test_returns_only_uncategorized(self):
-        avail = ["Grocery", "Transport"]
+        avail = ["Groceries", "Transport"]
         txs = [
             t("REMA 1000", tid="a"),
             t("Ruter", tid="b"),
@@ -90,7 +90,7 @@ class TestProposeCategories:
         assert ids == {"a", "b"}
 
     def test_month_filter(self):
-        avail = ["Grocery"]
+        avail = ["Groceries"]
         txs = [
             t("REMA may", d=date(2026, 5, 10), tid="m"),
             t("REMA june", d=date(2026, 6, 10), tid="j"),
@@ -101,12 +101,12 @@ class TestProposeCategories:
 
     def test_month_filter_excludes_null_date(self):
         # Without a date we don't know which month it belongs to. Don't pretend.
-        avail = ["Grocery"]
+        avail = ["Groceries"]
         txs = [t("REMA", d=None, tid="x")]
         assert propose_categories(txs, avail, month=date(2026, 5, 1)) == []
 
     def test_no_month_includes_null_date(self):
-        avail = ["Grocery"]
+        avail = ["Groceries"]
         txs = [t("REMA", d=None, tid="x")]
         out = propose_categories(txs, avail, month=None)
         assert len(out) == 1

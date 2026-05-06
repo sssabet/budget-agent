@@ -198,18 +198,18 @@ FIREBASE_MESSAGING_SENDER_ID=...
 ```
 
 Daily reminders use Web Push. On iPhone, the app must be added to the Home
-Screen and the user must allow notifications. Configure VAPID keys and protect
-the scheduler endpoint:
+Screen and the user must allow notifications. Configure VAPID keys:
 
 ```bash
 WEB_PUSH_VAPID_PUBLIC_KEY=...
 WEB_PUSH_VAPID_PRIVATE_KEY=...
 WEB_PUSH_VAPID_SUBJECT=mailto:you@example.com
-REMINDER_CRON_SECRET=...
 ```
 
-Cloud Scheduler should call `POST /jobs/send-daily-reminders` with the
-`X-Cron-Secret` header set to `REMINDER_CRON_SECRET`.
+Reminders are dispatched from a best-effort loop running inside the FastAPI
+process (see `_reminder_loop` in `app/api/main.py`) — no Cloud Scheduler
+needed. Trade-off: Cloud Run scales to zero, so a reminder only fires if the
+instance happens to be warm at the user's local reminder time.
 
 ## What's stubbed / next
 

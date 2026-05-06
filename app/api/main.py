@@ -19,6 +19,7 @@ consulting one-pager.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -28,7 +29,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -76,7 +77,7 @@ from app.db.init_db import DEFAULT_CATEGORIES
 from app.tools.csv_import import import_csv as run_csv_import
 from app.db.session import session_scope
 from app.notifications import due_reminders, send_daily_reminder
-from app.tools.budget_math import summarize_month
+from app.tools.budget_math import compare_budget_vs_actual, summarize_month
 
 
 def _setup_logging() -> None:
@@ -96,6 +97,12 @@ WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 # Cleared on instance restart. Document this in the response so callers don't
 # treat session_id as durable beyond a single instance's lifetime.
 _SESSIONS: dict[str, dict[str, Any]] = {}
+
+# Best-effort daily-reminder loop. Runs inside the FastAPI process so we don't
+# need Cloud Scheduler. Trade-off: Cloud Run scales to zero, so reminders only
+# fire when an instance happens to be warm at the user's local reminder time.
+_REMINDER_TICK_SECONDS = 60
+_reminder_task: asyncio.Task[None] | None = None
 
 
 def _ensure_default_household_users() -> None:
@@ -144,9 +151,57 @@ def _ensure_default_household_users() -> None:
         logging.getLogger(__name__).exception("failed to ensure default household users")
 
 
+def _run_reminder_pass() -> None:
+    cfg = settings()
+    if not cfg.web_push_vapid_private_key:
+        return
+    with session_scope() as s:
+        subs = list_enabled_notification_subscriptions(s)
+        due = due_reminders(subs, datetime.now(timezone.utc))
+        for reminder in due:
+            try:
+                send_daily_reminder(
+                    reminder.subscription,
+                    vapid_private_key=cfg.web_push_vapid_private_key,
+                    vapid_subject=cfg.web_push_vapid_subject,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception("reminder push failed")
+                continue
+            mark_subscription_reminded(
+                s, reminder.subscription.id, reminder.local_now.date()
+            )
+
+
+async def _reminder_loop() -> None:
+    while True:
+        try:
+            await asyncio.sleep(_REMINDER_TICK_SECONDS)
+            await asyncio.to_thread(_run_reminder_pass)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.getLogger(__name__).exception("reminder loop iteration failed")
+
+
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
     _ensure_default_household_users()
+    global _reminder_task
+    if _reminder_task is None:
+        _reminder_task = asyncio.create_task(_reminder_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    global _reminder_task
+    if _reminder_task is not None:
+        _reminder_task.cancel()
+        try:
+            await _reminder_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        _reminder_task = None
 
 
 class ChatRequest(BaseModel):
@@ -243,12 +298,27 @@ class BudgetVarianceResponse(BaseModel):
     status: str
 
 
+class CategoryProgressResponse(BaseModel):
+    """Per-category progress for the dashboard's spending view.
+
+    `progress_pct` is unbounded (can exceed 100 when over budget) so the UI
+    can decide whether to clamp the bar visually or extend it.
+    """
+    category: str
+    budgeted_NOK: str
+    actual_NOK: str
+    progress_pct: float
+    status: str  # "under" | "near" | "over"
+
+
 class DashboardResponse(BaseModel):
     month: str
     total_income_NOK: str
     total_expense_NOK: str
+    total_budget_NOK: str
     net_NOK: str
     by_category_NOK: dict[str, str]
+    category_progress: list[CategoryProgressResponse]
     over_budget: list[BudgetVarianceResponse]
     uncategorized_count: int
     estimated_date_count: int
@@ -347,12 +417,6 @@ class NotificationSubscriptionResponse(BaseModel):
     enabled: bool
     timezone: str
     reminder_time: str
-
-
-class ReminderJobResponse(BaseModel):
-    checked: int
-    sent: int
-    failed: int
 
 
 def _decimal_to_str(x: Decimal) -> str:
@@ -520,13 +584,38 @@ def dashboard(
         budgets = list_budgets(s, household_id)
         cats = categories_by_id(s, household_id)
         summary = summarize_month(txs, budgets, cats, target_month)
+        all_reports = compare_budget_vs_actual(txs, budgets, cats, target_month)
+        # Sort: budgeted categories with the most usage first, then unbudgeted
+        # (those go to the bottom — they don't have a "vs budget" story).
+        all_reports = sorted(
+            all_reports,
+            key=lambda r: (
+                r.budgeted == 0,
+                -(float(r.actual) / float(r.budgeted)) if r.budgeted else -float(r.actual),
+            ),
+        )
+        total_budget = sum((r.budgeted for r in all_reports), start=Decimal("0"))
         recent = list_transaction_rows(s, household_id, month=target_month, limit=5)
         return DashboardResponse(
             month=summary.month.isoformat()[:7],
             total_income_NOK=_decimal_to_str(summary.total_income),
             total_expense_NOK=_decimal_to_str(summary.total_expense),
+            total_budget_NOK=_decimal_to_str(total_budget),
             net_NOK=_decimal_to_str(summary.net),
             by_category_NOK={k: _decimal_to_str(v) for k, v in summary.by_category.items()},
+            category_progress=[
+                CategoryProgressResponse(
+                    category=row.category_name,
+                    budgeted_NOK=_decimal_to_str(row.budgeted),
+                    actual_NOK=_decimal_to_str(row.actual),
+                    progress_pct=(
+                        float(row.actual) / float(row.budgeted) * 100.0
+                        if row.budgeted > 0 else 0.0
+                    ),
+                    status=row.status,
+                )
+                for row in all_reports
+            ],
             over_budget=[
                 BudgetVarianceResponse(
                     category=row.category_name,
@@ -881,40 +970,6 @@ def save_notification_subscription(
             timezone=row.timezone,
             reminder_time=row.reminder_time.isoformat(timespec="minutes"),
         )
-
-
-@app.post("/jobs/send-daily-reminders", response_model=ReminderJobResponse)
-def send_daily_reminders(
-    x_cron_secret: str | None = Header(default=None),
-) -> ReminderJobResponse:
-    cfg = settings()
-    if not cfg.reminder_cron_secret:
-        raise HTTPException(status_code=503, detail="daily reminders are not configured")
-    if x_cron_secret != cfg.reminder_cron_secret:
-        raise HTTPException(status_code=401, detail="invalid cron secret")
-    if not cfg.web_push_vapid_private_key:
-        raise HTTPException(status_code=503, detail="web push private key is not configured")
-
-    sent = 0
-    failed = 0
-    with session_scope() as s:
-        subs = list_enabled_notification_subscriptions(s)
-        due = due_reminders(subs, datetime.now(timezone.utc))
-        for reminder in due:
-            try:
-                send_daily_reminder(
-                    reminder.subscription,
-                    vapid_private_key=cfg.web_push_vapid_private_key,
-                    vapid_subject=cfg.web_push_vapid_subject,
-                )
-            except Exception:
-                failed += 1
-                continue
-            sent += 1
-            mark_subscription_reminded(
-                s, reminder.subscription.id, reminder.local_now.date()
-            )
-    return ReminderJobResponse(checked=len(subs), sent=sent, failed=failed)
 
 
 async def _ensure_session(

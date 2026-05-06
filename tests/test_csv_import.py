@@ -43,8 +43,8 @@ def household(session: Session) -> Household:
     ])
     session.add_all([
         Category(household_id=h.id, name="Groceries", is_income=False),
-        Category(household_id=h.id, name="Eating_out", is_income=False),
-        Category(household_id=h.id, name="Subscriptions / Entertaiment", is_income=False),
+        Category(household_id=h.id, name="Eating Out", is_income=False),
+        Category(household_id=h.id, name="Subscriptions & Entertainment", is_income=False),
     ])
     session.commit()
     return h
@@ -71,8 +71,8 @@ class TestAutoCreateCategories:
         names = {c.name for c in session.query(Category).filter_by(household_id=household.id).all()}
         assert names == {
             "Groceries",
-            "Eating_out",
-            "Subscriptions / Entertaiment",
+            "Eating Out",
+            "Subscriptions & Entertainment",
             "Mat",
             "Food",
         }
@@ -126,7 +126,7 @@ class TestAutoCreateCategories:
     ):
         csv = (
             "Product,amount,paid_by,Category,belongs_to,Date\n"
-            "Dinner,100,Saeed,Eating_out,,2026-05\n"
+            "Dinner,100,Saeed,Eating Out,,2026-05\n"
             "Netflix,129,Saeed,Subscriptions,,2026-05\n"
         )
         result = import_csv(session, household.id, csv)

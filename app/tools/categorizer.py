@@ -28,21 +28,21 @@ from app.tools.types import Transaction
 # readability only.
 MERCHANT_RULES: dict[str, str] = {
     # Groceries
-    "rema": "Grocery",
-    "kiwi": "Grocery",
-    "coop extra": "Grocery",
-    "meny": "Grocery",
-    "bunnpris": "Grocery",
-    "joker": "Grocery",
-    "europris": "Grocery",
+    "rema": "Groceries",
+    "kiwi": "Groceries",
+    "coop extra": "Groceries",
+    "meny": "Groceries",
+    "bunnpris": "Groceries",
+    "joker": "Groceries",
+    "europris": "Groceries",
     # Subscriptions / Entertainment
-    "netflix": "Subscriptions / Entertaiment",
-    "spotify": "Subscriptions / Entertaiment",
-    "hbo": "Subscriptions / Entertaiment",
-    "viaplay": "Subscriptions / Entertaiment",
-    "youtube premium": "Subscriptions / Entertaiment",
-    "disney+": "Subscriptions / Entertaiment",
-    "apple.com/bill": "Subscriptions / Entertaiment",
+    "netflix": "Subscriptions & Entertainment",
+    "spotify": "Subscriptions & Entertainment",
+    "hbo": "Subscriptions & Entertainment",
+    "viaplay": "Subscriptions & Entertainment",
+    "youtube premium": "Subscriptions & Entertainment",
+    "disney+": "Subscriptions & Entertainment",
+    "apple.com/bill": "Subscriptions & Entertainment",
     # Transport (public)
     "ruter": "Transport",
     "vy": "Transport",
@@ -69,13 +69,13 @@ MERCHANT_RULES: dict[str, str] = {
     "sats": "Health & Wellness",
     "elixia": "Health & Wellness",
     # Eating out
-    "mcdonald": "Eating_out",
-    "burger king": "Eating_out",
-    "starbucks": "Eating_out",
-    "espresso house": "Eating_out",
-    "kaffebrenneriet": "Eating_out",
-    "foodora": "Eating_out",
-    "wolt": "Eating_out",
+    "mcdonald": "Eating Out",
+    "burger king": "Eating Out",
+    "starbucks": "Eating Out",
+    "espresso house": "Eating Out",
+    "kaffebrenneriet": "Eating Out",
+    "foodora": "Eating Out",
+    "wolt": "Eating Out",
 }
 
 

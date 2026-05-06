@@ -30,11 +30,10 @@ FULL_DATE_RE = re.compile(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*$")
 NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
 CATEGORY_ALIASES = {
-    "eatingout": "eatingout",
-    "subscriptions": "subscriptionsentertaiment",
-    "entertainment": "subscriptionsentertaiment",
-    "entertaiment": "subscriptionsentertaiment",
-    "liamleisure": "liamleisure",
+    "subscriptions": "subscriptionsentertainment",
+    "entertainment": "subscriptionsentertainment",
+    "entertaiment": "subscriptionsentertainment",
+    "grocery": "groceries",
     "travelling": "travel",
 }
 

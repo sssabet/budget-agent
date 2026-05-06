@@ -3,9 +3,6 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, time, timezone
 
-import pytest
-from fastapi import HTTPException
-
 from app.db.models import NotificationSubscription
 from app.notifications import reminder_is_due
 
@@ -50,19 +47,3 @@ def test_reminder_is_not_due_twice_on_same_local_day():
     )
 
     assert due is False
-
-
-def test_send_daily_reminders_rejects_wrong_cron_secret(monkeypatch):
-    from app.api import main as api_main
-
-    class StubSettings:
-        reminder_cron_secret = "secret"
-        web_push_vapid_private_key = "private"
-        web_push_vapid_subject = "mailto:test@example.com"
-
-    monkeypatch.setattr(api_main, "settings", lambda: StubSettings())
-
-    with pytest.raises(HTTPException) as exc:
-        api_main.send_daily_reminders(x_cron_secret="wrong")
-
-    assert exc.value.status_code == 401

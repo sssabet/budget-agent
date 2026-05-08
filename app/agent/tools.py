@@ -11,9 +11,10 @@ which is what we want for multi-tenant safety.
 """
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 from app.db.repository import (
@@ -21,6 +22,7 @@ from app.db.repository import (
     list_budgets,
     list_categories,
     list_transactions,
+    upsert_budget,
 )
 from app.db.session import session_scope
 from app.tools.analytics import (
@@ -30,9 +32,12 @@ from app.tools.analytics import (
 )
 from app.tools.budget_math import (
     compare_budget_vs_actual,
+    compute_planning_baseline,
+    diff_budget,
     list_uncategorized,
     spend_by_category,
     spend_by_owner,
+    suggest_allocations,
     summarize_month,
 )
 from app.tools.categorizer import propose_categories
@@ -46,6 +51,58 @@ def _parse_month(month: str) -> date:
 def _decimal_to_str(x: Decimal) -> str:
     # JSON-serializable; rounding handled at display time.
     return f"{x:.2f}"
+
+
+def _to_decimal(value: Any, *, field: str) -> Decimal:
+    """Coerce an LLM-supplied number/string to Decimal, with a clear error.
+
+    The agent will sometimes pass numbers as ints, floats, or strings depending
+    on the path the model took. Anything that can't parse cleanly should raise
+    rather than silently round wrong.
+    """
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(f"{field} must be a number, got {value!r}") from exc
+
+
+def _plan_token(
+    month: date,
+    allocations: dict[str, Decimal],
+    savings_target: Decimal | None,
+) -> str:
+    """Stable hash over (month, allocations, savings_target).
+
+    Why: `apply_budget_plan` re-derives this from its arguments and rejects the
+    call if it doesn't match the token from `draft_budget_plan`. That stops the
+    agent from applying a plan the user never confirmed (e.g. silently tweaked
+    numbers between draft and apply).
+    """
+    pairs = sorted(
+        (name.strip().lower(), f"{amount:.2f}") for name, amount in allocations.items()
+    )
+    saving = f"{savings_target:.2f}" if savings_target is not None else "-"
+    canonical = (
+        month.isoformat()
+        + "|"
+        + ";".join(f"{n}={a}" for n, a in pairs)
+        + "|"
+        + saving
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def _current_budget_for_month(
+    s, household_id: uuid.UUID, month: date
+) -> dict[str, Decimal]:
+    """{category_name: amount} for the household's existing budget for `month`."""
+    cat_map = categories_by_id(s, household_id)  # id (str) -> name
+    out: dict[str, Decimal] = {}
+    for b in list_budgets(s, household_id, month=month):
+        name = cat_map.get(b.category_id)
+        if name is not None:
+            out[name] = b.amount
+    return out
 
 
 def build_household_tools(household_id: uuid.UUID) -> list[Callable[..., Any]]:
@@ -362,6 +419,283 @@ def build_household_tools(household_id: uuid.UUID) -> list[Callable[..., Any]]:
             for s in suggestions
         ]
 
+    def get_planning_baseline(months_back: int = 6) -> dict:
+        """Return rolling per-category statistics for the household over the
+        last `months_back` months ending at the active month. Use this as the
+        first step when the user wants help planning a budget — it gives you
+        the numbers to ground the conversation in (avg, median, p90, recurring
+        floor) instead of guessing.
+
+        The window is zero-filled: a category seen in 2 of 6 months has its
+        avg divided by 6, not 2 — that's the right baseline for "what should
+        a typical month look like?".
+
+        Args:
+            months_back: How many months to include in the baseline window,
+                ending at today's month inclusive. Defaults to 6.
+        """
+        if months_back <= 0:
+            months_back = 1
+        if months_back > 24:
+            months_back = 24
+        today = date.today()
+        months: list[date] = []
+        y, mo = today.year, today.month
+        for _ in range(months_back):
+            months.append(date(y, mo, 1))
+            mo -= 1
+            if mo == 0:
+                mo = 12
+                y -= 1
+        months.reverse()
+
+        with session_scope() as s:
+            txs = list_transactions(s, household_id)
+        baseline = compute_planning_baseline(txs, months)
+        return {
+            "window_months": [m.isoformat() for m in baseline.months],
+            "avg_monthly_income_NOK": _decimal_to_str(baseline.avg_monthly_income),
+            "avg_monthly_expense_NOK": _decimal_to_str(baseline.avg_monthly_expense),
+            "avg_monthly_net_NOK": _decimal_to_str(baseline.avg_monthly_net),
+            "categories": [
+                {
+                    "category": c.category_name,
+                    "is_income": c.is_income,
+                    "months_observed": c.months_observed,
+                    "avg_monthly_NOK": _decimal_to_str(c.avg_monthly),
+                    "median_monthly_NOK": _decimal_to_str(c.median_monthly),
+                    "p90_monthly_NOK": _decimal_to_str(c.p90_monthly),
+                    "last_month_NOK": _decimal_to_str(c.last_month),
+                    "recurring_floor_NOK": _decimal_to_str(c.recurring_floor),
+                }
+                for c in baseline.categories
+            ],
+        }
+
+    def draft_budget_plan(
+        month: str,
+        strategy: str,
+        adjustments: dict[str, Any] | None = None,
+        savings_target_NOK: str | None = None,
+        months_back: int = 6,
+    ) -> dict:
+        """Draft a per-category budget proposal for `month` *without* writing
+        anything. Returns the proposed allocations, a diff against the current
+        budget, expected income/expense/net, a feasibility flag, and a
+        `plan_token` the agent must echo back when calling `apply_budget_plan`.
+
+        Always show the proposal to the user and ask for explicit confirmation
+        before applying. If the user wants edits, redraft (do not edit the
+        proposal locally).
+
+        Args:
+            month: Target month in YYYY-MM format.
+            strategy: One of "keep" (copy current budget; fall back to last
+                month's actual if no current budget), "rolling_average" (use
+                avg monthly spend per category over the baseline window), or
+                "adjust" (start from current budget and apply per-category
+                deltas from `adjustments`).
+            adjustments: For strategy="adjust", a mapping of category name ->
+                signed delta in NOK (e.g. {"Groceries": "-1000", "Eating out":
+                "500"}). Ignored for other strategies.
+            savings_target_NOK: Optional savings goal for the month. If set,
+                feasibility compares (income - expense) against this target.
+            months_back: Baseline window size for rolling_average and stats.
+                Defaults to 6.
+        """
+        target = _parse_month(month)
+        if strategy not in {"keep", "rolling_average", "adjust"}:
+            return {
+                "ok": False,
+                "error": f"unknown strategy {strategy!r}; choose keep, rolling_average, or adjust",
+            }
+
+        savings = (
+            _to_decimal(savings_target_NOK, field="savings_target_NOK")
+            if savings_target_NOK is not None
+            else None
+        )
+        adj: dict[str, Decimal] = {}
+        if adjustments:
+            for name, delta in adjustments.items():
+                adj[name] = _to_decimal(delta, field=f"adjustments[{name}]")
+
+        # Build baseline window ending at the target month (oldest first).
+        if months_back <= 0:
+            months_back = 1
+        if months_back > 24:
+            months_back = 24
+        months: list[date] = []
+        y, mo = target.year, target.month
+        # Start from the month BEFORE target (we don't include the target month
+        # in its own baseline since it's the one we're planning).
+        mo -= 1
+        if mo == 0:
+            mo = 12
+            y -= 1
+        for _ in range(months_back):
+            months.append(date(y, mo, 1))
+            mo -= 1
+            if mo == 0:
+                mo = 12
+                y -= 1
+        months.reverse()
+
+        with session_scope() as s:
+            txs = list_transactions(s, household_id)
+            current = _current_budget_for_month(s, household_id, target)
+            cats = list_categories(s, household_id)
+
+        baseline = compute_planning_baseline(txs, months)
+        proposal = suggest_allocations(
+            baseline,
+            target_month=target,
+            current_budget=current,
+            strategy=strategy,
+            adjustments=adj or None,
+            savings_target=savings,
+        )
+
+        # Surface category-name issues so the agent can ask the user to
+        # rename/create before applying.
+        known_names = {c.name for c in cats if not c.is_income}
+        unknown = sorted(set(proposal.allocations) - known_names)
+        notes = list(proposal.notes)
+        if unknown:
+            notes.append(
+                "categories not in this household (won't apply until added): "
+                + ", ".join(unknown)
+            )
+
+        diff_rows = diff_budget(current, proposal.allocations)
+        token = _plan_token(target, proposal.allocations, savings)
+        return {
+            "ok": True,
+            "month": target.isoformat(),
+            "strategy": proposal.strategy,
+            "plan_token": token,
+            "allocations_NOK": {
+                name: _decimal_to_str(amount)
+                for name, amount in proposal.allocations.items()
+            },
+            "diff": [
+                {
+                    "category": r.category_name,
+                    "current_NOK": _decimal_to_str(r.current),
+                    "proposed_NOK": _decimal_to_str(r.proposed),
+                    "delta_NOK": _decimal_to_str(r.delta),
+                }
+                for r in diff_rows
+            ],
+            "expected_income_NOK": _decimal_to_str(proposal.expected_income),
+            "expected_expense_NOK": _decimal_to_str(proposal.expected_expense),
+            "expected_net_NOK": _decimal_to_str(proposal.expected_net),
+            "savings_target_NOK": (
+                _decimal_to_str(proposal.savings_target)
+                if proposal.savings_target is not None
+                else None
+            ),
+            "feasibility": proposal.feasibility,
+            "gap_NOK": _decimal_to_str(proposal.gap),
+            "unknown_categories": unknown,
+            "notes": notes,
+        }
+
+    def apply_budget_plan(
+        month: str,
+        allocations_NOK: dict[str, Any],
+        plan_token: str,
+        savings_target_NOK: str | None = None,
+    ) -> dict:
+        """Apply a previously drafted plan to the household's budgets. ALL or
+        NOTHING: if any category fails (unknown name, invalid amount), no
+        budgets are written and `ok=False` is returned with details. The agent
+        must always relay this outcome to the user — including failures.
+
+        Only call after the user has explicitly confirmed the proposal. The
+        `plan_token` must match the one returned by `draft_budget_plan` for the
+        exact same `month`, `allocations_NOK`, and `savings_target_NOK`; if the
+        user changed any number, redraft first to get a new token.
+
+        Args:
+            month: Target month in YYYY-MM format.
+            allocations_NOK: {category_name: amount as decimal string} from the
+                draft, exactly as the user confirmed.
+            plan_token: The token returned by `draft_budget_plan`.
+            savings_target_NOK: Same value passed to draft (or None if absent).
+        """
+        target = _parse_month(month)
+
+        try:
+            allocations: dict[str, Decimal] = {
+                name: _to_decimal(amount, field=f"allocations_NOK[{name}]")
+                for name, amount in allocations_NOK.items()
+            }
+            savings = (
+                _to_decimal(savings_target_NOK, field="savings_target_NOK")
+                if savings_target_NOK is not None
+                else None
+            )
+        except ValueError as exc:
+            return {"ok": False, "applied_count": 0, "error": str(exc)}
+
+        for name, amount in allocations.items():
+            if amount < 0:
+                return {
+                    "ok": False,
+                    "applied_count": 0,
+                    "error": f"allocation for {name!r} is negative ({amount}); cannot apply",
+                }
+
+        expected = _plan_token(target, allocations, savings)
+        if expected != plan_token:
+            return {
+                "ok": False,
+                "applied_count": 0,
+                "error": (
+                    "plan_token mismatch — the allocations don't match the most recent "
+                    "draft. Re-run draft_budget_plan and confirm the new proposal with "
+                    "the user before applying."
+                ),
+            }
+
+        # Single transaction: any error inside session_scope rolls everything
+        # back, which is what "all or nothing" requires.
+        try:
+            with session_scope() as s:
+                cats = list_categories(s, household_id)
+                name_to_id = {
+                    c.name: uuid.UUID(c.id) for c in cats if not c.is_income
+                }
+                missing = sorted(set(allocations) - set(name_to_id))
+                if missing:
+                    raise ValueError(
+                        "categories not found in this household: "
+                        + ", ".join(missing)
+                    )
+                applied = 0
+                for name, amount in allocations.items():
+                    upsert_budget(
+                        s,
+                        household_id,
+                        month=target,
+                        category_id=name_to_id[name],
+                        amount=amount,
+                    )
+                    applied += 1
+            return {
+                "ok": True,
+                "month": target.isoformat(),
+                "applied_count": applied,
+                "plan_token": plan_token,
+            }
+        except Exception as exc:  # noqa: BLE001 — surface any DB error to the user
+            return {
+                "ok": False,
+                "applied_count": 0,
+                "error": str(exc) or exc.__class__.__name__,
+            }
+
     return [
         get_month_summary,
         get_spend_by_category,
@@ -374,4 +708,7 @@ def build_household_tools(household_id: uuid.UUID) -> list[Callable[..., Any]]:
         find_recurring_subscriptions_tool,
         list_transactions_for_month,
         search_transactions,
+        get_planning_baseline,
+        draft_budget_plan,
+        apply_budget_plan,
     ]

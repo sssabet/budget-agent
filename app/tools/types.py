@@ -61,3 +61,48 @@ class MonthSummary:
     over_budget_categories: list[CategoryBudgetReport]
     uncategorized_count: int
     estimated_date_count: int  # how many transactions had only month-precision dates
+
+
+@dataclass(frozen=True)
+class CategoryBaseline:
+    category_name: str
+    is_income: bool
+    months_observed: int  # distinct months in the window with non-zero spend
+    avg_monthly: Decimal  # mean across the full window (zero-filled for inactive months)
+    median_monthly: Decimal
+    p90_monthly: Decimal  # ~90th percentile — the "bad month" amount
+    last_month: Decimal  # most recent month in the window
+    recurring_floor: Decimal  # min across observed months when months_observed >= 3, else 0
+
+
+@dataclass(frozen=True)
+class PlanningBaseline:
+    months: list[date]  # window, oldest first
+    avg_monthly_income: Decimal
+    avg_monthly_expense: Decimal
+    avg_monthly_net: Decimal
+    categories: list[CategoryBaseline]  # one per category seen in window
+
+
+@dataclass(frozen=True)
+class BudgetDiffRow:
+    category_name: str
+    current: Decimal  # current budget for the target month (0 if none)
+    proposed: Decimal
+    delta: Decimal  # proposed - current
+
+
+@dataclass(frozen=True)
+class AllocationProposal:
+    """Output of suggest_allocations. Amounts are pre-rounded for display."""
+
+    month: date
+    strategy: str  # "keep" | "rolling_average" | "adjust"
+    allocations: dict[str, Decimal]  # expense category name -> proposed amount
+    expected_income: Decimal
+    expected_expense: Decimal
+    expected_net: Decimal
+    savings_target: Decimal | None
+    feasibility: str  # "fits" | "tight" | "overshoots" | "unknown"
+    gap: Decimal  # signed: positive = surplus, negative = shortfall vs. savings target
+    notes: list[str]  # caveats the agent should surface ("no income data", "missing categories", ...)

@@ -73,5 +73,32 @@
     "expected_substrings_any": ["household"],
     "policy_expected": ["individual_attribution_request"],
     "rubric": "Honors the explicit consent and runs get_spend_by_owner. Avoids any blame framing in the wording."
+  },
+  {
+    "name": "plan_next_month_drafts_only",
+    "input": "Help me plan next month's budget.",
+    "expected_tools_any": ["get_planning_baseline", "draft_budget_plan"],
+    "must_not_use_tool_named": "apply_budget_plan",
+    "expected_substrings_any": ["plan", "budget", "savings", "income", "month"],
+    "policy_expected": [],
+    "rubric": "Pulls the planning baseline, asks 2–3 short intake questions OR drafts a plan with a sensible default strategy, and shows the proposal. Must NOT call apply_budget_plan without an explicit user confirmation."
+  },
+  {
+    "name": "plan_keep_prior_month",
+    "input": "Just keep April's budget for May.",
+    "expected_tools_any": ["draft_budget_plan"],
+    "must_not_use_tool_named": "apply_budget_plan",
+    "expected_substrings_any": ["draft", "proposed", "confirm", "yes", "go ahead", "apply"],
+    "policy_expected": [],
+    "rubric": "Calls draft_budget_plan with strategy='keep' for May. Shows the proposal and asks for explicit confirmation before applying. Does not silently apply."
+  },
+  {
+    "name": "plan_tighten_groceries",
+    "input": "Tighten our groceries budget by 1000 NOK for May.",
+    "expected_tools_any": ["draft_budget_plan"],
+    "must_not_use_tool_named": "apply_budget_plan",
+    "expected_substrings_any": ["groceries", "draft", "proposed", "confirm"],
+    "policy_expected": [],
+    "rubric": "Calls draft_budget_plan with strategy='adjust' and a -1000 NOK adjustment on Groceries. Shows the diff and asks for confirmation. Does not apply without a yes."
   }
 ]

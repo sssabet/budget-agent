@@ -6,6 +6,9 @@ and applies a small set of heuristic rubrics:
 
   - expected_tools_any: at least one of these tools must have been called.
   - must_not_use_tool: when true, no tool calls are allowed (refusal cases).
+  - must_not_use_tool_named: a tool name (or list) that must NOT be called —
+    used for write-tool guards like apply_budget_plan, where reads are fine
+    but a write without explicit user confirmation is a regression.
   - expected_substrings_any: at least one substring must appear in the answer
     (case-insensitive).
   - expected_substrings_all: every substring must appear (case-insensitive).
@@ -71,6 +74,16 @@ def _check_case(case: dict[str, Any], record: TurnRecord) -> tuple[bool, list[st
 
     if case.get("must_not_use_tool") and tools_called:
         reasons.append(f"refusal case must not call tools, got {tools_called}")
+
+    forbidden = case.get("must_not_use_tool_named")
+    if forbidden:
+        # Support a single name (string) or a list.
+        forbidden_list = [forbidden] if isinstance(forbidden, str) else list(forbidden)
+        used_forbidden = [t for t in tools_called if t in forbidden_list]
+        if used_forbidden:
+            reasons.append(
+                f"must not call {forbidden_list} without confirmation, but called {used_forbidden}"
+            )
 
     sub_any: list[str] = case.get("expected_substrings_any", [])
     if sub_any and not any(s.lower() in answer_lower for s in sub_any):

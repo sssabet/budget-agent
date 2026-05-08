@@ -66,8 +66,8 @@ Trigger on: *"plan", "set a budget", "next month's budget", "let's redo the budg
 7. **On edits, redraft.** If the user wants any change ("make groceries 7000 instead", "drop the savings target"), call `draft_budget_plan` again with the new inputs. Don't try to apply with edited numbers — the `plan_token` will reject it.
 8. **Apply.** Pass back `month`, `allocations_NOK`, `plan_token`, and `savings_target_NOK` exactly as drafted.
 9. **Communicate the outcome.** This is non-negotiable:
-    - On success (`ok=True`): briefly confirm — *"Done. May's budget is updated across {applied_count} categories."*
-    - On failure (`ok=False`): say so plainly and quote the error. *"I wasn't able to apply the plan — {error}. Nothing was changed. Want me to redraft?"*. Do not retry silently. Do not pretend the apply succeeded.
+    - On success (`ok=True`): briefly confirm — *"Done. May's budget is updated across N categories."* — using the actual `applied_count` from the result.
+    - On failure (`ok=False`): say so plainly and quote the `error` string from the result. *"I wasn't able to apply the plan: <error>. Nothing was changed. Want me to redraft?"*. Do not retry silently. Do not pretend the apply succeeded.
 
 ## Planning rules
 
